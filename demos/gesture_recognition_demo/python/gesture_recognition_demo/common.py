@@ -32,7 +32,7 @@ def load_ie_core(device, cpu_extension=None):
 class IEModel:  # pylint: disable=too-few-public-methods
     """ Class that allows worknig with Inference Engine model. """
 
-    def __init__(self, model_path, device, ie_core, num_requests, model_type, output_shape=None):
+    def __init__(self, model_path, device, ie_core, model_type, output_shape=None):
         """Constructor"""
         if model_path.endswith((".xml", ".bin")):
             model_path = model_path[:-4]
@@ -41,8 +41,8 @@ class IEModel:  # pylint: disable=too-few-public-methods
         assert len(self.net.input_info) == 1, "One input is expected"
 
         self.exec_net = ie_core.load_network(network=self.net,
-                                             device_name=device,
-                                             num_requests=num_requests)
+                                             device_name=device)
+
         log.info('The {} model {} is loaded to {}'.format(model_type, model_path + ".xml", device))
 
         self.input_name = next(iter(self.net.input_info))
@@ -50,7 +50,7 @@ class IEModel:  # pylint: disable=too-few-public-methods
             if output_shape is not None:
                 candidates = []
                 for candidate_name in self.net.outputs:
-                    candidate_shape = self.exec_net.requests[0].output_blobs[candidate_name].buffer.shape
+                    candidate_shape = self.exec_net.output_info[candidate_name].shape
                     if len(candidate_shape) != len(output_shape):
                         continue
 
@@ -69,26 +69,4 @@ class IEModel:  # pylint: disable=too-few-public-methods
             self.output_name = next(iter(self.net.outputs))
 
         self.input_size = self.net.input_info[self.input_name].input_data.shape
-        self.output_size = self.exec_net.requests[0].output_blobs[self.output_name].buffer.shape
-        self.num_requests = num_requests
-
-    def infer(self, data):
-        """Runs model on the specified input"""
-
-        input_data = {self.input_name: data}
-        infer_result = self.exec_net.infer(input_data)
-        return infer_result[self.output_name]
-
-    def async_infer(self, data, req_id):
-        """Requests model inference for the specified input"""
-
-        input_data = {self.input_name: data}
-        self.exec_net.start_async(request_id=req_id, inputs=input_data)
-
-    def wait_request(self, req_id):
-        """Waits for the model output by the specified request ID"""
-
-        if self.exec_net.requests[req_id].wait(-1) == 0:
-            return self.exec_net.requests[req_id].output_blobs[self.output_name].buffer
-        else:
-            return None
+        self.output_size = self.exec_net.output_info[self.output_name].shape

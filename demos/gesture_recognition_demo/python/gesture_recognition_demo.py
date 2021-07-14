@@ -120,9 +120,9 @@ def main():
     ie = load_ie_core(args.device, args.cpu_extension)
 
     person_detector = PersonDetector(args.detection_model, args.device, ie,
-                                     num_requests=2, output_shape=DETECTOR_OUTPUT_SHAPE)
+                                     jobs=2, output_shape=DETECTOR_OUTPUT_SHAPE)
     action_recognizer = ActionRecognizer(args.action_model, args.device, ie,
-                                         num_requests=2, img_scale=ACTION_IMAGE_SCALE,
+                                         img_scale=ACTION_IMAGE_SCALE,
                                          num_classes=len(class_map))
 
     person_tracker = Tracker(person_detector, TRACKER_SCORE_THRESHOLD, TRACKER_IOU_THRESHOLD)

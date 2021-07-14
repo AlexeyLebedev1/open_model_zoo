@@ -56,7 +56,6 @@ class Tracker:  # pylint: disable=too-few-public-methods
         self._max_waiting = max_waiting
 
         self._last_detections = []
-        self._cur_req_id, self._next_req_id = 0, 1
         self._last_id = 0
 
     @staticmethod
@@ -215,9 +214,10 @@ class Tracker:  # pylint: disable=too-few-public-methods
     def add_frame(self, frame, max_num_detections, labels_map):
         """Adds new detections and returns active tracks"""
 
-        self._detector.async_infer(frame, self._next_req_id)
-        new_rois = self._detector.wait_request(self._cur_req_id)
-        self._cur_req_id, self._next_req_id = self._next_req_id, self._cur_req_id
+        next_req_id = self._detector.getIdleRequestId()
+        cur_req_id = 1 - next_req_id
+        self._detector.async_infer(frame, next_req_id)
+        new_rois = self._detector.wait_request(cur_req_id)
 
         if new_rois is not None:
             self._last_detections = self._track(self._last_detections, new_rois)

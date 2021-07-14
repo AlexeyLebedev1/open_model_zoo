@@ -16,6 +16,7 @@
 
 import cv2
 import numpy as np
+from openvino.inference_engine import InferQueue
 
 from gesture_recognition_demo.common import IEModel
 
@@ -23,10 +24,12 @@ from gesture_recognition_demo.common import IEModel
 class PersonDetector(IEModel):
     """ Class that allows worknig with person detectpr models. """
 
-    def __init__(self, model_path, device, ie_core, num_requests, output_shape=None):
+    def __init__(self, model_path, device, ie_core, jobs, output_shape=None):
         """Constructor"""
 
-        super().__init__(model_path, device, ie_core, num_requests, 'Person Detection', output_shape)
+        super().__init__(model_path, device, ie_core, output_shape, 'Person Detection')
+
+        self.infer_queue = InferQueue(self.exec_net, jobs)
 
         _, _, h, w = self.input_size
         self.input_height = h
@@ -59,14 +62,15 @@ class PersonDetector(IEModel):
 
             return np.concatenate((out[:, 1:], out[:, 0].reshape([-1, 1])), axis=1)
 
-    def async_infer(self, frame, req_id):
+    def async_infer(self, frame, userdata):
         """Requests model inference for the specified image"""
 
         in_frame, initial_h, initial_w, scale_h, scale_w = self._prepare_frame(frame)
         self.last_sizes = initial_h, initial_w
         self.last_scales = scale_h, scale_w
 
-        super().async_infer(in_frame, req_id)
+        input_data = {self.input_name: in_frame.astype(np.float32)}
+        self.infer_queue.async_infer(inputs=input_data, userdata=userdata)
 
     def wait_request(self, req_id):
         """Waits for the model output"""
@@ -74,8 +78,9 @@ class PersonDetector(IEModel):
         if self.last_scales is None or self.last_sizes is None:
             raise ValueError('Unexpected request')
 
-        result = super().wait_request(req_id)
-        if result is None:
+        if self.infer_queue[req_id].wait(-1) == 0:
+            result = self.infer_queue[req_id].get_blob(self.output_name).buffer
+        else:
             return None
 
         initial_h, initial_w = self.last_sizes
@@ -85,12 +90,5 @@ class PersonDetector(IEModel):
 
         return out
 
-
-    def __call__(self, frame):
-        """Runs model on the specified input"""
-
-        in_frame, initial_h, initial_w, scale_h, scale_w = self._prepare_frame(frame)
-        result = self.infer(in_frame)
-        out = self._process_output(result, initial_h, initial_w, scale_h, scale_w)
-
-        return out
+    def getIdleRequestId(self):
+        return self.infer_queue.get_idle_request_info()['id']
