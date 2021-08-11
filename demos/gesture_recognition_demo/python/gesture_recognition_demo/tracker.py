@@ -216,7 +216,7 @@ class Tracker:  # pylint: disable=too-few-public-methods
 
         next_req_id = self._detector.getIdleRequestId()
         cur_req_id = 1 - next_req_id
-        self._detector.async_infer(frame, next_req_id)
+        self._detector.async_infer(frame)
         new_rois = self._detector.wait_request(cur_req_id)
 
         if new_rois is not None:

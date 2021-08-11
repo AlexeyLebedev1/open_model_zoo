@@ -27,9 +27,10 @@ class PersonDetector(IEModel):
     def __init__(self, model_path, device, ie_core, jobs, output_shape=None):
         """Constructor"""
 
-        super().__init__(model_path, device, ie_core, output_shape, 'Person Detection')
+        super().__init__(model_path, device, ie_core, 'Person Detection', output_shape)
 
         self.infer_queue = InferQueue(self.exec_net, jobs)
+        self.infer_queue.set_infer_callback(self._process_output)
 
         _, _, h, w = self.input_size
         self.input_height = h
@@ -50,25 +51,28 @@ class PersonDetector(IEModel):
 
         return in_frame, initial_h, initial_w, scale_h, scale_w
 
-    def _process_output(self, result, initial_h, initial_w, scale_h, scale_w, ):
+    def _process_output(self, request, status, userdata):
         """Converts network output to the internal format"""
 
+        scale_h, scale_w = self.last_scales
+        result = request.get_blob(self.output_name).buffer
         if result.shape[-1] == 5:  # format: [xmin, ymin, xmax, ymax, conf]
-            return np.array([[scale_w, scale_h, scale_w, scale_h, 1.0]]) * result
+            userdata['result'] = np.array([[scale_w, scale_h, scale_w, scale_h, 1.0]]) * result
         else:  # format: [image_id, label, conf, xmin, ymin, xmax, ymax]
             scale_w *= self.input_width
             scale_h *= self.input_height
             out = np.array([[1.0, scale_w, scale_h, scale_w, scale_h]]) * result[0, 0, :, 2:]
 
-            return np.concatenate((out[:, 1:], out[:, 0].reshape([-1, 1])), axis=1)
+            userdata['result'] = np.concatenate((out[:, 1:], out[:, 0].reshape([-1, 1])), axis=1)
 
-    def async_infer(self, frame, userdata):
+    def async_infer(self, frame):
         """Requests model inference for the specified image"""
 
         in_frame, initial_h, initial_w, scale_h, scale_w = self._prepare_frame(frame)
         self.last_sizes = initial_h, initial_w
         self.last_scales = scale_h, scale_w
 
+        userdata = {'result' : None}
         input_data = {self.input_name: in_frame.astype(np.float32)}
         self.infer_queue.async_infer(inputs=input_data, userdata=userdata)
 
@@ -79,16 +83,9 @@ class PersonDetector(IEModel):
             raise ValueError('Unexpected request')
 
         if self.infer_queue[req_id].wait(-1) == 0:
-            result = self.infer_queue[req_id].get_blob(self.output_name).buffer
+            return self.infer_queue.userdata[req_id]['result']
         else:
             return None
-
-        initial_h, initial_w = self.last_sizes
-        scale_h, scale_w = self.last_scales
-
-        out = self._process_output(result, initial_h, initial_w, scale_h, scale_w)
-
-        return out
 
     def getIdleRequestId(self):
         return self.infer_queue.get_idle_request_info()['id']
